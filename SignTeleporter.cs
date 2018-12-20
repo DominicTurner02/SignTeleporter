@@ -1,9 +1,13 @@
-﻿using Rocket.Core.Plugins;
+using Newtonsoft.Json.Linq;
+using Rocket.API;
+using Rocket.Core.Plugins;
 using Rocket.Unturned.Chat;
 using Rocket.Unturned.Events;
 using Rocket.Unturned.Player;
 using SDG.Unturned;
 using System;
+using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 using Logger = Rocket.Core.Logging.Logger;
 
@@ -12,21 +16,53 @@ namespace SignTeleporter
     public class SignTeleporter : RocketPlugin<ConfigurationSignTeleporter>
     {
         public static SignTeleporter Instance { get; private set; }
+        public List<string> AllowedIDs = new List<string>();
 
         protected override void Load()
         {
             base.Load();
             Instance = this;
-            Logger.LogWarning("\n Loading SignTeleporter, made by Mr.Kwabs...");
+            Logger.LogWarning("\nLoading SignTeleporter, made by Mr.Kwabs...");
+            if (!File.Exists("Plugins/SignTeleporter/AllowedIDs.json"))
+            {
+                Logger.LogError("\nAllowedIDs.json does not exist, creating it now...");
+                FirstLoad();
+                Logger.LogWarning("Successfully created AllowedIDs.json.");
+            }
+            SendList();
+            Logger.LogWarning($"\nFound AllowedIDs.json, read {AllowedIDs.Count} IDs.");
+            Logger.LogWarning("\nID List: \n");
+            foreach (string ID in AllowedIDs)
+            {
+                Logger.LogWarning($"{ID}");
+            }
+            Logger.LogWarning($"\nMaximum Distance from Sign to Teleport: {Instance.Configuration.Instance.MaxDistance}");
             UnturnedPlayerEvents.OnPlayerUpdateGesture += OnUpdatedGesture;
-            Logger.LogWarning("\n Successfully loaded SignTeleporter, made by Mr.Kwabs!");
+            Logger.LogWarning("\nSuccessfully loaded SignTeleporter, made by Mr.Kwabs!");
         }
 
         protected override void Unload()
         {
+            AllowedIDs.Clear();
             UnturnedPlayerEvents.OnPlayerUpdateGesture += OnUpdatedGesture;
             Instance = null;
             base.Unload();
+        }
+
+        private void FirstLoad()
+        {
+            JArray IDArray = new JArray(
+                new JArray("765xxxx", "765xxxx"));
+            File.WriteAllText("Plugins/SignTeleporter/AllowedIDs.json", IDArray.ToString());
+        }
+
+        private void SendList()
+        {
+            JArray IDArray = JArray.Parse(File.ReadAllText("Plugins/SignTeleporter/AllowedIDs.json"));
+            foreach (string ID in IDArray)
+            {
+                AllowedIDs.Add(ID);
+            }
         }
 
         private void OnUpdatedGesture(UnturnedPlayer uCaller, UnturnedPlayerEvents.PlayerGesture Gesture)
@@ -42,17 +78,31 @@ namespace SignTeleporter
 
                 if (RayCast.GetComponent<InteractableSign>() != null)
                 {
-                    ManageSign(uCaller, RayCast.GetComponent<InteractableSign>());
+                    if (AllowTeleport(RayCast.GetComponent<InteractableSign>()))
+                    {
+                        ManageSign(uCaller, RayCast.GetComponent<InteractableSign>());
+                        return;
+                    }
+                    Logger.LogError("The Owner of the Sign is not in AllowedIDs.json!");       
                 }
             }
             return;
         }
 
 
+        private bool AllowTeleport(InteractableSign Sign)
+        {
+            if (AllowedIDs.Contains(Sign.owner.ToString()))
+            {
+                return true;
+            }
+            return false;
+        }
+
         private void ManageSign(UnturnedPlayer uPlayer, InteractableSign Sign)
         {
 
-            if (Sign.text == null || Sign.text == "" || !Sign.text.Contains("~")) { return; }
+            if (Sign.text == null || Sign.text == "" || !Sign.text.Contains("~") || !uPlayer.HasPermission("signteleporter.teleport")) { return; }
             int[] Coordinates;
             try
             {
